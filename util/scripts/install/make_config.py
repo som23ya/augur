@@ -2,12 +2,9 @@ import json
 import os
 import sys
 
-def configure_cache(config):
-    print("==Setting up Cache configuration==")
-    config['Cache'] = {'config': {}}
-    config['Cache']['config']['cache.data_dir'] = "runtime/cache/"
-    config['Cache']['config']['cache.lock_dir'] = "runtime/cache/"
-    config['Cache']['config']['cache.type'] = "file"
+import pprint
+
+pp = pprint.PrettyPrinter()
 
 def configure_database(config, credentials):
     print("==Setting up Augur Database==")
@@ -15,56 +12,31 @@ def configure_database(config, credentials):
     config['Database']['database'] = credentials['database']
     config['Database']['host'] = credentials['host']
     config['Database']['port'] = credentials['port']
-    config['Database']['user'] = credentials['user']
+    config['Database']['user'] = credentials['db_user']
     config['Database']['password'] = credentials['password']
     config['Database']['schema'] = "augur_data"
-    config['Database']['key'] = credentials['key']
+    config['Database']['key'] = credentials['github_api_key']
 
     config['GitHub'] = {'apikey': credentials['github_api_key']}
-    print()
-
-def configure_server(config):
-    print("==Setting up Augur Server==")
-    config['Server'] = {}
-    config['Server']['host'] = "0.0.0.0"
-    config['Server']['port'] = "5000"
-    config['Server']['workers'] = "4"
-    config['Server']['cache_expire'] = "3600"
-
-def configure_facade(config):
-    print("==Setting up Facade==")
-    config['Facade'] = {}
-    f_host = input("Enter Facade DB Host [Default: localhost]: ") or "localhost"
-    config['Facade']['host'] = f_host
-    f_port = input("Enter Facade DB Port [Default: 3306]: ") or "3306"
-    config['Facade']['port'] = f_port
-    f_name = input("Enter Facade DB Name [Default: facade]: ") or "facade"
-    config['Facade']['name'] = f_name
-    f_user = input("Enter Facade DB Username [Default: augur]: ") or "augur"
-    config['Facade']['user'] = f_user
-    f_pass = input("Enter Facade DB Password: ") or "password"
-    config['Facade']['pass'] = f_pass
-    f_proj = input("Enter Facade Projects: ")
-    config['Facade']['projects'] = f_proj.split()
-    print()
-
-def configure_ghtorrent(config):
-    print("==Setting up GHTorrent==")
-    config['GHTorrent'] = {}
-    gh_host = input("Enter GHTorrent Host [Default: localhost]: ") or "localhost"
-    config['GHTorrent']['host'] = gh_host
-    gh_port = input("Enter GHTorrent Port [Default: 3306]: ") or "3306"
-    config['GHTorrent']['port'] = gh_port
-    gh_name = input("Enter GHTorrent Name [Default: ghtorrent]: ") or "ghtorrent"
-    config['GHTorrent']['name'] = gh_name
-    gh_user = input("Enter GHTorrent Username [Default: augur]: ") or "augur"
-    config['GHTorrent']['user'] = gh_user
-    gh_pass = input("Enter GHTorrent Password: ") or "password"
-    config['GHTorrent']['pass'] = gh_pass
-    print()
 
 def configure_defaults(config):
     print("==Setting up defaults==")
+
+    if not 'Cache' in config:
+        config['Cache'] = {}
+        config['Cache']['config'] = {
+            "cache.data_dir": "runtime/cache/",
+            "cache.lock_dir": "runtime/cache/",
+            "cache.type": "file"
+        }
+
+    if not 'Server' in config:
+        config['Server'] = {
+            "host": "0.0.0.0",
+            "port": "5000",
+            "workers": "4",
+            "cache_expire": "3600"
+        }
 
     if not 'Facade' in config:
         config["Facade"] = {
@@ -74,7 +46,7 @@ def configure_defaults(config):
             "delete_marked_repos": 0,
             "fix_affiliations": 1,
             "force_analysis": 1,
-            "force_invalidate_caches": 0,
+            "force_invalidate_caches": 1,
             "force_updates": 1,
             "limited_run": 0,
             "multithreaded": 0,
@@ -84,16 +56,6 @@ def configure_defaults(config):
             "run_analysis": 1
         }
         print("Set default values for Facade...")
-
-    if not 'GHTorrent' in config:
-        config['GHTorrent'] = {
-            "host": "localhost",
-            "name": "ghtorrent",
-            "pass": "password",
-            "port": "3306",
-            "user": "augur"
-        }
-        print("Set default values for GHTorrent...")
 
     if not 'Development' in config:
         config["Development"] = {
@@ -111,89 +73,108 @@ def configure_defaults(config):
             "jobs": [
                 {
                     "delay": 150000,
-                    "given": ["git_url"],
+                    "given": ["github_url"],
                     "model": "issues",
-                    "repo_group_id": 0
+                    "repo_group_id": 0,
+                    "all_focused": 1
                 },
                 {
-                    "delay": 150000,
-                    "given": ["git_url"],
                     "model": "repo_info",
+                    "given": ["github_url"],
+                    "delay": 150000,
                     "repo_group_id": 0
                 },
                 {
+                    "model": "commits",
+                    "given": ["repo_group"],
                     "delay": 150000,
-                    "given": ["git_url"],
+                    "repo_group_id": 0
+                },
+                {
                     "model": "pull_requests",
+                    "given": ["github_url"],
+                    "delay": 1000000,
+                    "repo_group_id": 0
+                }, 
+                {
+                    "delay": 1000000,
+                    "given": ["github_url"],
+                    "model": "contributors",
+                    "repo_group_id": 0
+                },
+                {
+                    "delay": 1000000,
+                    "given": ["git_url"],
+                    "model": "insights",
                     "repo_group_id": 0
                 }
             ]
         }
         print("Set default values for Housekeeper...")
 
+def configure_workers(config, credentials):
+
+    if credentials['facade_repo_path'][-1] != '/':
+        credentials['facade_repo_path'] += '/'
+
     if not 'Workers' in config:
         config['Workers'] = {
             "facade_worker": {
-                "port": 51246,
-                "switch": 0,
-                "workers": 1,
-                "repo_directory": "$HOME/augur_repos"
-            },
-            "pull_request_worker": {
-                "port": 51252,
+                "port": 56111,
+                "repo_directory": credentials['facade_repo_path'],
                 "switch": 0,
                 "workers": 1
             },
             "github_worker": {
-                "port": 51238,
+                "port": 56211,
+                "switch": 0,
+                "workers": 2 
+            },
+            "insight_worker": {
+                "port": 56311,
                 "switch": 0,
                 "workers": 1
             },
-            "insight_worker": {
-                "port": 51244,
+            "pull_request_worker": {
+                "port": 56411,
                 "switch": 0,
                 "workers": 1
             },
             "repo_info_worker": {
-                "port": 51242,
+                "port": 56511,
                 "switch": 0,
                 "workers": 1
-            }
+            },
+            "value_worker": {
+                "port": 56611,
+                "scc_bin": "scc",
+                "switch": 0,
+                "workers": 1
+            },
+            "metric_status_worker": {
+                "port": 56711,
+                "switch": 0,
+                "workers": 1
+            },
+            "linux_badge_worker": {
+                "port": 56811,
+                "switch": 0,
+                "workers": 1
+            }   
         }
         print("Set default values for Workers")
 
     print()
 
 def main():
-    if os.path.isfile("../../../augur.config.json"):
-        print("augur.config.json already exists!")
-        inp = input("Do you want to rewrite it? (Y/N): ")
-        if inp.lower() != 'y':
-            print('Exiting...')
-            return
-
     print("Beginning 'augur.config.json' creation process...\n")
     config = {}
 
-
-    configure_cache(config)
     with open('temp.config.json', 'r') as db_credentials_file:
-        configure_database(config, json.load(db_credentials_file))
-    configure_server(config)
-
-    # inp = input("Would you like to setup GHTorrent? (Y/N): ")
-    # if inp.lower() == 'y':
-    #     configure_ghtorrent(config)
-    # else:
-    #     print("Skipping GHTorrent configuration...")
-
-    # inp = input("Would you like to setup Facade? (Y/N): ")
-    # if inp.lower() == 'y':
-    #     configure_facade(config)
-    # else:
-    #     print("Skipping Facade configuration...")
-
-    configure_defaults(config)
+        credentials = json.load(db_credentials_file)
+        configure_database(config, credentials)
+        configure_defaults(config)
+        configure_workers(config, credentials)
 
     try:
         with open('../../../augur.config.json', 'w') as f:

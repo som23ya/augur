@@ -1,5 +1,6 @@
 import click
 import os
+import subprocess
 import sys
 from augur.runtime import pass_application
 from augur.util import logger
@@ -46,18 +47,19 @@ def excpt(app):
 
 
 @cli.command('upgrade', short_help='Upgrade Augur')
-@click.option('--from-directory', '-f', type=click.Path(), help='Upgrade from a provided directroy rather than git.')
+@click.option('--from-directory', '-f', type=click.Path(), help='Upgrade from a provided directory rather than git.')
 @pass_application
 def upgrade(app, from_directory):
     """
     Print the location of the interpreter that is running this
     """
-    app.log.info(pyrcss.util.self_upgrade(from_directory=from_directory, dry_run=True))
-    pyrcss.util.self_upgrade(from_directory=from_directory)
+    pass
+    # app.log.info(pyrcss.util.self_upgrade(from_directory=from_directory, dry_run=true))
+    # pyrcss.util.self_upgrade(from_directory=from_directory)
 
 
 @cli.command('test', short_help='Test Augur')
-@click.option('--from-directory', '-f', type=click.Path(), help='Upgrade from a provided directroy rather than git.')
+@click.option('--from-directory', '-f', type=click.Path(), help='Upgrade from a provided directory rather than git.')
 @pass_application
 def test(app, from_directory):
     """
@@ -65,3 +67,11 @@ def test(app, from_directory):
     """
     app.log.info(pyrcss.util.run_tests(from_directory=from_directory, dry_run=True))
     pyrcss.util.run_tests(from_directory=from_directory)
+
+@cli.command('kill', short_help='Kill Augur')
+@pass_application
+def kill(app):
+    """
+    kill running augur processes
+    """
+    subprocess.call('util/scripts/control/augurkill.sh')

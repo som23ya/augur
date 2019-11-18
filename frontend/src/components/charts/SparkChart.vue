@@ -1,7 +1,7 @@
 <template>
-  <div ref="holder" style="position: relative; z-index: 5">
-    <h3 style="font-size:0.6rem;text-align: center; padding: 0 0 0.3rem 0">{{ title }}</h3>
-    <!-- <spinner :size="30" style="top: 5%; position: relative; transform: translateY(-50%);"></spinner> -->
+  <div ref="holder" class="sparkChartDiv">
+    <h3 class="sparkChartHeader">{{ title }}</h3>
+    <!-- <spinner :size="30" class="sparkChartSpinner"></spinner> -->
     <div class="chart">
       <!-- <div id="hi"></div> -->
       <vega-lite :spec="spec" :data="values"></vega-lite>
@@ -48,7 +48,7 @@ export default {
       let config = {
         "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
         "width": this.x / 15,
-        "height": this.y / 17,
+        "height": this.y / 25,
         "padding": 0,
         "mark": {
           "type":"line",

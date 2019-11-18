@@ -1,17 +1,14 @@
 from multiprocessing import Process, Queue
 from urllib.parse import urlparse
-import requests
+import requests, sys
 import pandas as pd
 import sqlalchemy as s
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy import MetaData, and_
-import statistics
-import logging
-import json
+import statistics, logging, os, json, time
 import numpy as np
 import scipy.stats
 import datetime
-logging.basicConfig(filename='worker.log', filemode='w', level=logging.INFO)
 
 def dump_queue(queue):
     """
@@ -32,25 +29,31 @@ class InsightWorker:
     config: holds info like api keys, descriptions, and database connection strings
     """
     def __init__(self, config, task=None):
+        self.config = config
+        logging.basicConfig(filename='worker_{}.log'.format(self.config['id'].split('.')[len(self.config['id'].split('.')) - 1]), filemode='w', level=logging.INFO)
+        logging.info('Worker (PID: {}) initializing...'.format(str(os.getpid())))
         self._task = task
         self._child = None
         self._queue = Queue()
-        self.config = config
         self.db = None
         self.tool_source = 'Insight Worker'
         self.tool_version = '0.0.2' # See __init__.py
         self.data_source = 'Augur API'
         self.refresh = True
-        self.send_insights = False
+        self.send_insights = True
+        self.finishing_task = False
+        self.anomaly_days = self.config['anomaly_days']
+        self.training_days = self.config['training_days']
+        self.confidence = self.config['confidence_interval'] / 100
 
         logging.info("Worker initializing...")
         
         specs = {
-            "id": "com.augurlabs.core.insight_worker",
+            "id": self.config['id'],
             "location": self.config['location'],
             "qualifications":  [
                 {
-                    "given": [["repo_git"]],
+                    "given": [["git_url"]],
                     "models":["insights"]
                 }
             ],
@@ -73,42 +76,51 @@ class InsightWorker:
         self.db = s.create_engine(self.DB_STR, poolclass=s.pool.NullPool,
             connect_args={'options': '-csearch_path={}'.format(dbschema)})
 
+        helper_schema = 'augur_operations'
+        self.helper_db = s.create_engine(self.DB_STR, poolclass = s.pool.NullPool,
+            connect_args={'options': '-csearch_path={}'.format(helper_schema)})
         
         # produce our own MetaData object
         metadata = MetaData()
+        helper_metadata = MetaData()
 
         # we can reflect it ourselves from a database, using options
         # such as 'only' to limit what tables we look at...
         metadata.reflect(self.db, only=['chaoss_metric_status', 'repo_insights', 'repo_insights_records'])
+        helper_metadata.reflect(self.helper_db, only=['worker_history', 'worker_job'])
 
         # we can then produce a set of mappings from this MetaData.
         Base = automap_base(metadata=metadata)
+        HelperBase = automap_base(metadata=helper_metadata)
 
         # calling prepare() just sets up mapped classes and relationships.
         Base.prepare()
+        HelperBase.prepare()
 
         # mapped classes are ready
         self.chaoss_metric_status_table = Base.classes['chaoss_metric_status'].__table__
         self.repo_insights_table = Base.classes['repo_insights'].__table__
         self.repo_insights_records_table = Base.classes['repo_insights_records'].__table__
 
-        requests.post('http://{}:{}/api/unstable/workers'.format(
-            self.config['broker_host'],self.config['broker_port']), json=specs) #hello message
+        self.history_table = HelperBase.classes.worker_history.__table__
+        self.job_table = HelperBase.classes.worker_job.__table__
 
-        # Query all repos and last repo id
-        repoUrlSQL = s.sql.text("""
-            SELECT repo_git, repo_id FROM repo order by repo_id asc
-        """)
-        rs = pd.read_sql(repoUrlSQL, self.db, params={}).to_records()
-        pop_off = 0
-        i = 0
-        while i < pop_off:
-            rs = rs[1:]
-            i += 1
-        for row in rs:
-            self._queue.put({'repo_id': row['repo_id'], 'repo_git': row['repo_git']})
-        self.run()
-        # self.discover_insights({'repo_id': 21000, 'repo_git': 'https://github.com/rails/rails.git'})
+        connected = False
+        for i in range(5):
+            try:
+                logging.info("attempt {}".format(i))
+                if i > 0:
+                    time.sleep(10)
+                requests.post('http://{}:{}/api/unstable/workers'.format(
+                    self.config['broker_host'],self.config['broker_port']), json=specs)
+                logging.info("Connection to the broker was successful")
+                connected = True
+                break
+            except requests.exceptions.ConnectionError:
+                logging.error('Cannot connect to the broker. Trying again...')
+        if not connected:
+            sys.exit('Could not connect to the broker after 5 attempts! Quitting...')
+
 
     def update_config(self, config):
         """ Method to update config and set a default
@@ -133,7 +145,7 @@ class InsightWorker:
         """ entry point for the broker to add a task to the queue
         Adds this task to the queue, and calls method to process queue
         """
-        repo_git = value['given']['repo_git']
+        repo_git = value['given']['git_url']
 
         """ Query all repos """
         repoUrlSQL = s.sql.text("""
@@ -141,10 +153,10 @@ class InsightWorker:
             """.format(repo_git))
         rs = pd.read_sql(repoUrlSQL, self.db, params={})
         try:
-            self._queue.put(CollectorTask(message_type='TASK', entry_info={"repo_git": repo_git, 
-                "repo_id": rs.iloc[0]["repo_id"], "repo_group_id": rs.iloc[0]["repo_group_id"]}))
-        except:
-            print("that repo is not in our database")
+            self._queue.put({"git_url": repo_git, 
+                "repo_id": int(rs.iloc[0]["repo_id"]), "repo_group_id": int(rs.iloc[0]["repo_group_id"]), "job_type": value['job_type']})
+        except Exception as e:
+            logging.info("that repo is not in our database, {}".format(e))
         if self._queue.empty(): 
             if 'github.com' in repo_git:
                 self._task = value
@@ -169,11 +181,12 @@ class InsightWorker:
         Determines what action to take based off the message type
         """
         while True:
+            time.sleep(2)
             if not self._queue.empty():
                 message = self._queue.get()
-            else:
-                break
-            self.discover_insights(message)
+            # else:
+            #     break
+                self.discover_insights(message)
 
     def discover_insights(self, entry_info):
         """ Data collection function
@@ -182,6 +195,7 @@ class InsightWorker:
 
         # Update table of endpoints before we query them all
         logging.info("Discovering insights for task with entry info: {}".format(entry_info))
+        self.record_model_process(entry_info, 'insights')
 
         # Set the endpoints we want to discover insights for
         endpoints = [{'cm_info': "issues-new"}, {'cm_info': "code-changes"}, {'cm_info': "code-changes-lines"}, 
@@ -201,8 +215,8 @@ class InsightWorker:
         """"""
 
         # If we are discovering insights for a group vs repo, the base url will change
-        if 'repo_group_id' in entry_info:
-            base_url = 'http://{}:{}/api/unstable/repo-groups/{}'.format(
+        if 'repo_group_id' in entry_info and 'repo_id' not in entry_info:
+            base_url = 'http://{}:{}/api/unstable/repo-groups/{}/'.format(
                 self.config['broker_host'],self.config['broker_port'], entry_info['repo_group_id'])
         else:
             base_url = 'http://{}:{}/api/unstable/repo-groups/9999/repos/{}/'.format(
@@ -223,6 +237,7 @@ class InsightWorker:
             
             # Filter out keys that we do not want to analyze (e.g. repo_id)
             raw_values = {}
+            unique_keys = None
             if len(data) > 0:
                 try:
                     unique_keys = list(filter(is_unique_key, data[0].keys()))
@@ -232,24 +247,21 @@ class InsightWorker:
                 logging.info("Endpoint with url: {} returned an empty response. Moving on to next endpoint.\n".format(url))
                 continue
 
-            # ci after past year insights after 90 days
             # num issues, issue comments, num commits, num pr, comments pr
             logging.info("Found the following unique keys for this endpoint: {}".format(unique_keys))
             date_filtered_data = []
             i = 0
             not_timeseries = False
+            begin_date = datetime.datetime.now()
+
+            # Subtract configurable amount of time
+            begin_date = begin_date - datetime.timedelta(days=self.training_days)
+            begin_date = begin_date.strftime('%Y-%m-%d')
             for dict in data:
-                begin_date = datetime.datetime.now()
-                # Subtract 1 year and leap year check
-                try:
-                    begin_date = begin_date.replace(year=begin_date.year-1)
-                except ValueError:
-                    begin_date = begin_date.replace(year=begin_date.year-1, day=begin_date.day-1)
-                begin_date = begin_date.strftime('%Y-%m-%d')
                 try:
                     if dict['date'] > begin_date:
                         date_filtered_data = data[i:]
-                        logging.info("data 365 days ago date found: {}, {}".format(dict['date'], begin_date))
+                        logging.info("data {} days ago date found: {}, {}".format(self.training_days, dict['date'], begin_date))
                         break
                 except:
                     logging.info("Endpoint {} is not a timeseries, moving to next".format(endpoint))
@@ -262,13 +274,14 @@ class InsightWorker:
             date_found_index = None
             date_found = False
             x = 0
-            begin_date = datetime.datetime.now() - datetime.timedelta(days=90)
+            
+            begin_date = datetime.datetime.now() - datetime.timedelta(days=self.anomaly_days)
             for dict in date_filtered_data:
                 dict_date = datetime.datetime.strptime(dict['date'], '%Y-%m-%dT%H:%M:%S.%fZ')#2018-08-20T00:00:00.000Z
                 if dict_date > begin_date and not date_found:
                     date_found = True
                     date_found_index = x
-                    logging.info("raw values 90 days ago date found: {}, {}".format(dict['date'], begin_date))
+                    logging.info("raw values within {} days ago date found: {}, {}".format(self.anomaly_days, dict['date'], begin_date))
                 x += 1
                 for key in unique_keys:
                     try:
@@ -283,8 +296,7 @@ class InsightWorker:
 
             for key in raw_values.keys():
                 if len(raw_values[key]) > 0:
-                    confidence = 0.95
-                    mean, lower, upper = self.confidence_interval(raw_values[key], confidence=confidence)
+                    mean, lower, upper = self.confidence_interval(raw_values[key], confidence=self.confidence)
                     logging.info("Upper: {}, middle: {}, lower: {}".format(upper, mean, lower))
                     i = 0
                     discovery_index = None
@@ -324,14 +336,14 @@ class InsightWorker:
                                 'ri_value': date_filtered_raw_values[discovery_index][key],#date_filtered_raw_values[j][key],
                                 'ri_date': date_filtered_raw_values[discovery_index]['date'],#date_filtered_raw_values[j]['date'],
                                 'ri_score': score,
-                                'ri_detection_method': '95% confidence interval',
+                                'ri_detection_method': '{} confidence interval'.format(self.confidence),
                                 "tool_source": self.tool_source,
                                 "tool_version": self.tool_version,
                                 "data_source": self.data_source
                             }
                             result = self.db.execute(self.repo_insights_records_table.insert().values(record))
                             logging.info("Primary key inserted into the repo_insights_records table: {}".format(result.inserted_primary_key))
-
+                            self.insight_results_counter += 1
                             # Send insight to Jonah for slack bot
                             self.send_insight(record, abs(date_filtered_raw_values[discovery_index][key] - mean))
 
@@ -350,7 +362,7 @@ class InsightWorker:
                                         'ri_date': tuple['date'],#date_filtered_raw_values[j]['date'],
                                         'ri_fresh': 0 if j < discovery_index else 1,
                                         'ri_score': score,
-                                        'ri_detection_method': '95% confidence interval',
+                                        'ri_detection_method': '{} confidence interval'.format(self.confidence),
                                         "tool_source": self.tool_source,
                                         "tool_version": self.tool_version,
                                         "data_source": self.data_source
@@ -367,23 +379,101 @@ class InsightWorker:
                 else:
                     logging.info("Key: {} has empty raw_values, should not have key here".format(key))
 
+        self.register_task_completion(entry_info, "insights")
+
+    def record_model_process(self, entry_info, model):
+
+        task_history = {
+            "repo_id": entry_info['repo_id'],
+            "worker": self.config['id'],
+            "job_model": model,
+            "oauth_id": self.config['zombie_id'],
+            "timestamp": datetime.datetime.now(),
+            "status": "Stopped",
+            "total_results": self.insight_results_counter
+        }
+        if self.finishing_task:
+            result = self.helper_db.execute(self.history_table.update().where(
+                self.history_table.c.history_id==self.history_id).values(task_history))
+        else:
+            result = self.helper_db.execute(self.history_table.insert().values(task_history))
+            logging.info("Record incomplete history tuple: {}".format(result.inserted_primary_key))
+            self.history_id = int(result.inserted_primary_key[0])
+
+    def register_task_completion(self, entry_info, model):
+        # Task to send back to broker
+        task_completed = {
+            'worker_id': self.config['id'],
+            'job_type': entry_info['job_type'],
+            'repo_id': entry_info['repo_id'],
+            'git_url': entry_info['git_url']
+        }
+        # Add to history table
+        task_history = {
+            "repo_id": entry_info['repo_id'],
+            "worker": self.config['id'],
+            "job_model": model,
+            "oauth_id": self.config['zombie_id'],
+            "timestamp": datetime.datetime.now(),
+            "status": "Success",
+            "total_results": self.insight_results_counter
+        }
+        self.helper_db.execute(self.history_table.update().where(
+            self.history_table.c.history_id==self.history_id).values(task_history))
+
+        logging.info("Recorded job completion for: " + str(task_completed) + "\n")
+
+        # Update job process table
+        updated_job = {
+            "since_id_str": entry_info['repo_id'],
+            "last_count": self.insight_results_counter,
+            "last_run": datetime.datetime.now(),
+            "analysis_state": 0
+        }
+        self.helper_db.execute(self.job_table.update().where(
+            self.job_table.c.job_model==model).values(updated_job))
+        logging.info("Update job process for model: " + model + "\n")
+
+        # Notify broker of completion
+        logging.info("Telling broker we completed task: " + str(task_completed) + "\n\n" + 
+            "This task inserted: " + str(self.insight_results_counter) + " tuples.\n\n")
+
+        requests.post('http://{}:{}/api/unstable/completed_task'.format(
+            self.config['broker_host'],self.config['broker_port']), json=task_completed)
+
+        # Reset results counter for next task
+        self.insight_results_counter = 0
+
     def send_insight(self, insight, units_from_mean):
-        
-        begin_date = datetime.datetime.now() - datetime.timedelta(days=7)
-        dict_date = datetime.datetime.strptime(insight['ri_date'], '%Y-%m-%dT%H:%M:%S.%fZ')#2018-08-20T00:00:00.000Z
-        if dict_date > begin_date and self.send_insights:
-            logging.info("Insight less than 7 days ago date found: {}\n\nSending to Jonah...".format(insight))
-            to_send = {
-                'insight': True,
-                'rg_name': insight['rg_name'],
-                'repo_git': insight['repo_git'],
-                'value': insight['ri_value'],
-                'field': insight['ri_field'],
-                'metric': insight['ri_metric'],
-                'units_from_mean': units_from_mean,
-                'detection_method': insight['ri_detection_method']
-            }
-            requests.post('https://7oksmwzsy7.execute-api.us-east-2.amazonaws.com/dev-1/insight-event', json=to_send)
+        try:
+            repoSQL = s.sql.text("""
+                SELECT repo_git, rg_name 
+                FROM repo, repo_groups
+                WHERE repo_id = {}
+            """.format(insight['repo_id']))
+
+            repo = pd.read_sql(repoSQL, self.db, params={}).iloc[0]
+            
+            begin_date = datetime.datetime.now() - datetime.timedelta(days=self.anomaly_days)
+            dict_date = datetime.datetime.strptime(insight['ri_date'], '%Y-%m-%dT%H:%M:%S.%fZ')#2018-08-20T00:00:00.000Z
+            # logging.info("about to send to jonah")
+            if dict_date > begin_date and self.send_insights:
+                logging.info("Insight less than {} days ago date found: {}\n\nSending to Jonah...".format(self.anomaly_days, insight))
+                to_send = {
+                    'insight': True,
+                    # 'rg_name': repo['rg_name'],
+                    'repo_git': repo['repo_git'],
+                    'value': insight['ri_value'], # y-value of data point that is the anomaly
+                    'date': insight['ri_date'], # date of data point that is the anomaly
+                    'field': insight['ri_field'], # name of the field from the endpoint that the anomaly was detected on
+                    'metric': insight['ri_metric'], # name of the metric the anomaly was detected on
+                    'units_from_mean': units_from_mean,
+                    'detection_method': insight['ri_detection_method']
+                }
+                requests.post('https://fgrmv7bswc.execute-api.us-east-2.amazonaws.com/dev/insight-event', json=to_send)
+        except Exception as e:
+            logging.info("sending insight to jonah failed: {}".format(e))
+
 
 
     def clear_insight(self, repo_id, new_score, new_metric, new_field):
@@ -428,7 +518,7 @@ class InsightWorker:
             insertion_directions['record'] = True
 
         # Query current insights and rank by score
-        num_insights_per_repo = 3
+        num_insights_per_repo = 2
         insightSQL = s.sql.text("""
             SELECT distinct(ri_metric),repo_id, ri_score
             FROM repo_insights

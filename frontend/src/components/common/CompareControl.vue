@@ -6,7 +6,7 @@
           <d-col cols="12" lg="2">
             <div class="text-center text-lg-center ">Compare from your repos:</div>
           </d-col>
-          <d-col cols="12" lg="3">
+          <d-col cols="12" lg="4">
             <multiselect v-model="selectedGroups" :options="GroupOptions"
                          placeholder="Select Group" :close-on-select="false" :clear-on-select="false"
                          :preserve-search="true"  :multiple="isGroup">
@@ -15,7 +15,7 @@
               </template>
             </multiselect>
           </d-col>
-          <d-col cols="12" lg="3" v-if="!isGroup">
+          <d-col cols="12" lg="4" v-if="!isGroup">
             <multiselect v-model="selectedRepos" :multiple="true" :close-on-select="false" :clear-on-select="false"
                          :preserve-search="true" :options="RepoOptions"
                          :disabled="getSelectedGroups.length === 0" placeholder="Select Repo" >
@@ -23,7 +23,7 @@
                 class="multiselect__single" v-if="values.length && !isOpen">{{ values.length }} options selected</span>
               </template>
               <template slot="option" slot-scope="props">
-                <div class="option__desc">{{props.option.split('/')[1]}}</div>
+                <div class="option__desc">{{ props.option.split('/')[1] }}</div>
               </template>
             </multiselect>
           </d-col>
@@ -33,15 +33,17 @@
               <d-button @click="onReset">Reset</d-button>
             </d-button-group>
           </d-col>
-          <d-col cols="12" lg="3" :class="{'offset-md-3':isGroup}">
+          
+          <!-- <d-col cols="12" lg="3" :class="{'offset-md-3':isGroup}">
             <div v-d-toggle.my-collapse variant="primary" size="small" class="float-right"
                  @click="isCollpase = !isCollpase">
-              <div v-if="isCollpase">More configuration options<i class="material-icons" style="font-size: 1.3rem
+               <div v-if="isCollpase">More configuration options<i class="material-icons" style="font-size: 1.3rem
 ">keyboard_arrow_down</i></div>
-              <div v-if="!isCollpase">Less configuration options<i class="material-icons" style="font-size: 1.3rem">keyboard_arrow_up</i>
+               <div v-if="!isCollpase">Less configuration options<i class="material-icons" style="font-size: 1.3rem">keyboard_arrow_up</i>
               </div>
             </div>
-          </d-col>
+          </d-col> -->
+         
         </d-row>
         <d-row>
             <d-badge theme="primary" v-if="!isGroup" pill class="mx-2 mt-2" v-for="item in getSelectedRepos">
@@ -202,11 +204,13 @@
       ])
     },
     methods: {
+      ...mapMutations('common', [
+        'mutateStartDate', 
+        'mutateEndDate'        
+      ]), 
       ...mapMutations('compare', [
         'setCompare',
         'setVizOptions',
-        'mutateStartDateChange',
-        'mutateEndDateChange',
         'resetCompared',
         'mutateComparedRepo',
         'mutateComparedGroup'
@@ -254,14 +258,14 @@
     startDate!: Date;
     endDate!: Date;
     isGroup!: boolean;
-    
-    
+
+
     comparedRepoGroups!:any;
     comparedRepos!:any;
     comparisionSize!:any;
 
-    mutateStartDateChange!: any;
-    mutateEndDateChange!: any;
+    mutateStartDate!: any;
+    mutateEndDate!: any;
     mutateComparedRepo!:any;
     mutateComparedGroup!:any;
     setCompare!:any;
@@ -308,7 +312,21 @@
     }
 
     get getSelectedRepos() {
-      return this.selectedRepos
+      return this.selectedRepos.names
+    }
+
+    get selectedRepoEntities () {
+      console.log("Compare control")
+      let repos: any[] = []
+      let repo = null
+      let i = null
+      for (i in this.selectedRepos) {
+        repo = this.selectedRepos[i]
+        console.log(repo, this.repoRelations, this.selectedGroups)
+        console.log(this.repoRelations[this.selectedGroups][repo.split('/')[1]])
+        repos.push(this.repoRelations[this.selectedGroups][repo.split('/')[1]])
+      }
+      return repos
     }
 
     // get GroupOptions() {
@@ -367,25 +385,46 @@
     }
 
     onStartDate(e: any) {
-      this.mutateStartDateChange(e)
+      this.mutateStartDate(e)
     }
 
     onEndDate(e: any) {
-      this.mutateEndDateChange(e)
+      this.mutateEndDate(e)
     }
 
     onCompare(e: any) {
-      if(!this.isGroup) {
-        console.log(this.selectedRepos)
-        router.push({
-          name: 'repo_overview_compare',
-          params: {
-            group: this.base.rg_name,
-            repo: this.base.repo_name,
-            repo_group_id: this.base.repo_group_id,
-            repo_id: this.base.repo_id,
-            compares: this.selectedRepos.join(',')}
+      // ensure that a repository is selected
+      if (this.selectedRepos.length === 0) {
+        window.alert('Please select a repo first from the dropdown');
+        return;
+      }
+      if (!this.isGroup) {
+        console.log("onCompare: ", e, this.base)
+        let comparedRepoIds = ''//String(this.base.repo_id)
+        let repo: any = null
+        let i = 0
+        for (repo of this.selectedRepoEntities) {
+          console.log(repo)
+          if (i == 0)
+            comparedRepoIds += String(repo.repo_id)
+          else
+            comparedRepoIds += "," + String(repo.repo_id)
+          i++
+        }
+        this.setComparedRepos({ 'names': [this.selectedRepos.join(',')], 'ids': [comparedRepoIds] }).then(() => {
+          router.push({
+            name: 'repo_overview_compare',
+            params: {
+              group: this.base.rg_name,
+              repo: this.base.repo_name,
+              repo_group_id: this.base.repo_group_id,
+              repo_id: this.base.repo_id,
+              compares: this.selectedRepos.join(','),
+              comparedRepoIds
+            }
+          })
         })
+
       } else {
         router.push({
           name: 'group_overview_compare',
@@ -413,8 +452,8 @@
       this.setVizOptions(
         initialState
       )
-      this.mutateStartDateChange(initialState.startDate)
-      this.mutateEndDateChange(initialState.endDate)
+      this.mutateStartDate(initialState.startDate)
+      this.mutateEndDate(initialState.endDate)
       this.resetCompared()
 
       if (!this.isGroup) {
@@ -429,10 +468,12 @@
         })
       }
     }
+
     removeSelectedRepos(e:any) {
       let index = this.selectedRepos.indexOf(e);
       if (index !== -1) this.selectedRepos.splice(index, 1);
     }
+
     removeSelectedGroups(e:any) {
       let index = this.selectedGroups.indexOf(e);
       if (index !== -1) this.selectedGroups.splice(index, 1);

@@ -1,25 +1,22 @@
 <template>
-
-  <d-card-body :title="title" class="text-center">
-    <!-- <vega-lite :spec="spec" :data="values"></vega-lite> -->
+  <div>
     <div :id="source"></div>
-    <div style="position: relative; top: -0px !important; transform: translateY(-0.45rem)"class="form-item form-checkboxes tickradios">
-        <div class="inputGroup ">
+    <div class="horizontalBarChartDiv form-item form-checkboxes tickradios">
+         <div class="inputGroup ">
           <input id="totalradio" name="lines" value="1" type="radio" v-model="type">
-          <label id="front" for="totalradio">Total</label>
+         <!-- <label id="front" for="totalradio">Total</label> --> 
         </div>
         <div class="inputGroup ">
           <input id="netradio" name="lines" value="0" type="radio" v-model="type">
-          <label id="front" for="netradio">Net</label>
+         <!-- <label id="front" for="netradio">Net</label> -->
         </div>
         <div class="inputGroup ">
           <input id="addedradio" name="lines" value="2" type="radio" v-model="type">
-          <label id="front" for="addedradio">Added</label>
-        </div>
+         <!-- <label id="front" for="addedradio">Added</label> -->
+        </div> 
         
-    </div>
-  </d-card-body>
-
+    </div> 
+  </div>
 </template>
 
 

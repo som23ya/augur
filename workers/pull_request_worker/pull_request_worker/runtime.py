@@ -1,16 +1,10 @@
 import json
 import logging
 import os
-
 import click
 import requests
 from flask import Flask, Response, jsonify, request
-
 from pull_request_worker.worker import GHPullRequestWorker
-
-
-logging.basicConfig(filename='worker.log', filemode='w', level=logging.INFO)
-
 
 def create_server(app, gw):
     """ Consists of AUGWOP endpoints for the broker to communicate to this worker
@@ -38,6 +32,13 @@ def create_server(app, gw):
                         status=200,
                         mimetype="application/json")
 
+    @app.route("/AUGWOP/heartbeat", methods=['GET'])
+    def heartbeat():
+        if request.method == 'GET':
+            return jsonify({
+                "status": "alive"
+            })
+
     @app.route("/AUGWOP/config")
     def augwop_config():
         """ Retrieve worker's config
@@ -62,11 +63,15 @@ def main(augur_url, host, port):
 
     while True:
         try:
-            r = requests.get("http://{}:{}".format(server['host'],worker_port) + '/AUGWOP/task')
-            if r.status == 200:
-                worker_port += 1
+            print("Trying port: {}\n".format(worker_port))
+            r = requests.get("http://{}:{}/AUGWOP/heartbeat".format(server['host'],worker_port)).json()
+            if 'status' in r:
+                if r['status'] == 'alive':
+                    worker_port += 1
         except:
             break
+
+    logging.basicConfig(filename='worker_{}.log'.format(worker_port), filemode='w', level=logging.INFO)
 
     config = {
             "id": "com.augurlabs.core.pull_request_worker.{}".format(worker_port),
@@ -94,7 +99,6 @@ def main(augur_url, host, port):
 
     create_server(app, None)
     logging.info("Starting Flask App with pid: " + str(os.getpid()) + "...")
-
 
     app.run(debug=app.debug, host=server['host'], port=worker_port)
     if app.gh_pr_worker._child is not None:
