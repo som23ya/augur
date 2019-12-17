@@ -32,16 +32,7 @@ class GitHubWorker:
         self.history_id = None
         self.finishing_task = False
 
-<<<<<<< HEAD
-        url = "https://api.github.com/users/gabe-heim"
-        response = requests.get(url=url, headers=self.headers)
-        print response
-        self.rate_limit = int(response.headers['X-RateLimit-Remaining'])
-
-        specs = {
-=======
         self.specs = {
->>>>>>> 7be5cfb1f9a1ea60073770658ee2279e8b66417b
             "id": self.config['id'],
             "location": self.config['location'],
             "qualifications":  [
@@ -1256,7 +1247,8 @@ class GitHubWorker:
                     for col in update_col_map.keys():
                         if update_col_map[col] in obj:
                             if obj[update_col_map[col]] != existing_tuple[col]:
-                                logging.info("Tuple {} needs an " +  "update for column: {}\n".format(obj[duplicate_key_map[db_dupe_key]], col, obj))
+                                logging.info("Tuple {} needs an " +
+                                    "update for column: {}\n".format(obj[duplicate_key_map[db_dupe_key]], col, obj))
                                 obj['flag'] = 'need_update'
                                 obj['pkey'] = existing_tuple[db_pkey]
                 else:

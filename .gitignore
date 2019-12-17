@@ -132,7 +132,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+<<<<<<< HEAD
+.DS_Store
+=======
 # Augur-spdx
 ./spdx-scanner/dosocs2.conf
 spdx-scanner/dosocs2.conf
 spdx-scanner/augur-spdx/
+>>>>>>> 7be5cfb1f9a1ea60073770658ee2279e8b66417b

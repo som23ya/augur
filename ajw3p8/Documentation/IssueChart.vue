@@ -38,7 +38,7 @@
 </template>
 
 <script>
-import IssueOverviewModal from '../IssuesOverViewModal.vue'
+import IssueOverviewModal from '../IssusOverViewModal.vue'
 export default {
   components: {
     IssueOverviewModal
