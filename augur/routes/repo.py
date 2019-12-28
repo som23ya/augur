@@ -1,3 +1,5 @@
+#SPDX-License-Identifier: MIT
+
 import json
 from flask import Flask, request, Response, send_from_directory, redirect, flash, jsonify
 from flask_login import LoginManager, current_user, login_user, login_required, logout_user

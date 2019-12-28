@@ -1,3 +1,5 @@
+#SPDX-License-Identifier: MIT
+
 import datetime
 from sqlalchemy import Table, ForeignKey, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import relationship

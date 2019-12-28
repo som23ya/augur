@@ -1,3 +1,8 @@
+#SPDX-License-Identifier: MIT
+"""
+Miscellaneous Augur library commands for controlling the backend components
+"""
+
 import click
 import os
 import subprocess

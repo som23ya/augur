@@ -1,6 +1,6 @@
 #SPDX-License-Identifier: MIT
 """
-Runs Augur with Gunicorn when called
+Runs Augur with Gunicorn
 """
 
 

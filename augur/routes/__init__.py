@@ -1,3 +1,8 @@
+#SPDX-License-Identifier: MIT
+"""
+Non-metric API route definitions
+"""
+
 import importlib
 import os
 import glob
@@ -10,6 +15,3 @@ def create_routes(server):
     create_user_routes(server)
     create_repo_routes(server)
     create_broker_routes(server)
-    # for plugin_name in server._augur._loaded_plugins:
-    #     module = server._augur[plugin_name]
-    #     module.create_routes(server)

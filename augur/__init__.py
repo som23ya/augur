@@ -1,4 +1,7 @@
 #SPDX-License-Identifier: MIT
+"""
+Augur's main module
+"""
 
 # Metadata
 from .metadata import __version__

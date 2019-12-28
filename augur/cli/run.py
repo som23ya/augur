@@ -1,3 +1,8 @@
+#SPDX-License-Identifier: MIT
+"""
+Augur library commands for controlling the backend components
+"""
+
 from augur.runtime import pass_application
 from augur.util import logger
 from augur.server import Server

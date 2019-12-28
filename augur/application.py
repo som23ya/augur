@@ -1,6 +1,6 @@
 #SPDX-License-Identifier: MIT
 """
-Handles global context, I/O, and configuration
+Handles configuration, metric functions, global context, and I/O
 """
 
 import os
@@ -104,9 +104,6 @@ class Application(object):
 
         self.metrics = MetricDefinitions(self)
 
-
-        # # Initalize all objects to None
-        # self.__metrics_status = None
         self._loaded_plugins = {}
 
         # Application.default_plugins

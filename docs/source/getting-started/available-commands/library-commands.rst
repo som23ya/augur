@@ -6,7 +6,7 @@ Augur provides a few handy scripts and options for controlling the backend proce
 
 ``run``
 ========
-The collection of the ``run`` commands controls the actual starting and stopping of the server. For right now, only the default command ``augur run`` is implemented. This will initialize the backend server by itself and show the logs in the terminal. Press ``CTRL-C`` to kill it.
+The collection of the ``run`` commands controls the actual starting and stopping of the backend server. For right now, only the default command ``augur run`` is implemented. This will initialize the backend server by itself and show the logs in the terminal. Press ``CTRL-C`` to kill it.
 
 Example\:
 

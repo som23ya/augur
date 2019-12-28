@@ -1,7 +1,8 @@
 #SPDX-License-Identifier: MIT
 """
-Creates routes for the broker
+Manages communications with data collection workers and distributes their assigned housekeeper tasks
 """
+
 from flask import request, jsonify, Response
 import logging
 import json, requests, time

@@ -1,6 +1,8 @@
+#SPDX-License-Identifier: MIT
 """
-Keeps data up to date
+Manages data update tasks and matches them with compatible workers
 """
+
 import logging, requests, os, json, time
 from sqlalchemy.ext.automap import automap_base
 from multiprocessing import Process, Queue

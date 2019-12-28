@@ -1,3 +1,5 @@
+#SPDX-License-Identifier: MIT
+
 class ExampleDatasource:
     def __init__(self):
         self.counter = 0

@@ -1,3 +1,8 @@
+#SPDX-License-Identifier: MIT
+"""
+Augur library commands for interacting with the database
+"""
+
 import csv
 import click
 import sqlalchemy as s
