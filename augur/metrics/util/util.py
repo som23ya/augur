@@ -1,5 +1,6 @@
+#SPDX-License-Identifier: MIT
 """
-Directory, which is for utility/non-metric endpoints.
+Helper/non-metric endpoints
 """
 
 import datetime

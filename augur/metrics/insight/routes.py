@@ -1,3 +1,5 @@
+#SPDX-License-Identifier: MIT
+
 from flask import Response
 
 def create_insight_routes(server):

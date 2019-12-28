@@ -1,3 +1,5 @@
+#SPDX-License-Identifier: MIT
+
 import sqlalchemy as s
 from augur.util import logger, add_metrics
 

@@ -1,3 +1,5 @@
+#SPDX-License-Identifier: MIT
+
 from flask import Response
 
 def create_util_routes(server):
